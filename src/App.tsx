@@ -208,8 +208,7 @@ export default function App() {
         <section id="about" className="about">
           <h2>About</h2>
           <p>
-            I made this as a side project while working on mitochondrial genome assembly in an undergraduate research lab.
-            It compares your sequence to COX1, the gene used for animal DNA barcoding, from every vertebrate mitogenome in
+            MitoID compares your sequence to COX1, the gene used for animal DNA barcoding, from every vertebrate mitogenome in
             NCBI RefSeq ({speciesCount} species).
           </p>
           <p>
@@ -227,10 +226,6 @@ export default function App() {
             The gibbon example was assembled from raw Illumina reads with my{" "}
             <a href={PIPELINE}>mitogenome assembly pipeline</a>. The code and the script that builds the reference set
             are on <a href={GITHUB}>GitHub</a>.
-          </p>
-          <p className="small muted">
-            Garrett Dungan
-            {db && <>, reference set built {db.built}</>}
           </p>
         </section>
       </main>
