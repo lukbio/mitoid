@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlignmentView } from "./components/AlignmentView";
 import { TreeView } from "./components/TreeView";
-import { matchScore, type Hit } from "./lib/identify";
+import type { Hit } from "./lib/identify";
 import { gcPercent, parseInput } from "./lib/seq";
 import { useIdentifier } from "./useIdentifier";
 
 const EXAMPLES = [
-  { file: "toad_barcode.fasta", label: "Toad COX1 barcode", note: "658 bp, the standard barcode region" },
-  { file: "gibbon_mitogenome.fasta", label: "Gibbon mitogenome", note: "16.5 kb, assembled from raw reads" },
+  { file: "toad_barcode.fasta", label: "American toad, COX1 barcode (658 bp)" },
+  { file: "gibbon_mitogenome.fasta", label: "gibbon, whole mitogenome (16.5 kb)" },
 ];
 const GITHUB = "https://github.com/yeezy1218/mitoid";
 const PIPELINE = "https://github.com/yeezy1218/mitogenome-pipeline";
@@ -15,7 +15,7 @@ const PIPELINE = "https://github.com/yeezy1218/mitogenome-pipeline";
 const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
 
 /** Tracks an element's content width; the callback ref works for elements
- * that mount later (the tree panel only exists once there's a result). */
+ * that mount later (the tree only exists once there's a result). */
 function useWidth<T extends HTMLElement>() {
   const [width, setWidth] = useState(720);
   const observer = useRef<ResizeObserver | null>(null);
@@ -39,7 +39,7 @@ export default function App() {
   useEffect(() => {
     if (result) {
       setSelected(0);
-      resultsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      resultsRef.current?.scrollIntoView({ block: "start" });
     }
   }, [result]);
 
@@ -54,94 +54,103 @@ export default function App() {
     if (parsed.seq) identify(parsed.seq);
   };
 
+  const top: Hit | undefined = result?.hits[0];
   const hit: Hit | undefined = result?.hits[selected];
+  const speciesCount = db ? db.count.toLocaleString() : "about 7,700";
+
+  let inputInfo = "";
+  if (parsed.seq) {
+    inputInfo = `${parsed.seq.length.toLocaleString()} bp, ${gcPercent(parsed.seq).toFixed(1)}% GC`;
+    if (parsed.ambiguous) inputInfo += `, ${parsed.ambiguous} ambiguous`;
+    if (parsed.dropped) inputInfo += `, ${parsed.dropped} non-DNA characters ignored`;
+  }
+
+  let status = "";
+  if (loadError) status = `Couldn't load the reference set (${loadError}).`;
+  else if (!db) status = "Loading reference set...";
+  else if (parsed.seq.length > 0 && parsed.seq.length < 100) status = "Needs at least 100 bp.";
 
   return (
-    <div className="page">
-      <header className="masthead">
-        <h1>
-          Mito<span>ID</span>
-        </h1>
-        <p className="tagline">
-          Paste a vertebrate mitochondrial sequence. MitoID finds its closest species by COX1, the standard animal DNA barcode,
-          and places it on a tree, right in your browser.
-        </p>
+    <>
+      <header className="topbar">
+        <div className="wrap">
+          <span className="brand">MitoID</span>
+          <nav>
+            <a href="#about">about</a>
+            <a href={GITHUB}>source</a>
+          </nav>
+        </div>
       </header>
 
-      <form className="panel input-panel" onSubmit={submit}>
-        <label htmlFor="seq" className="label">
-          Sequence <span className="hint">raw or FASTA: a COX1 barcode, a single gene, or a whole mitogenome</span>
-        </label>
-        <textarea
-          id="seq"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={">my_sample\nACTCTATACCTAATCTTCGGCGCATGAGCTGGAATAGTGGGCACCGCCCTAAGTCTA..."}
-          spellCheck={false}
-          rows={8}
-        />
-        <div className="input-meta" aria-live="polite">
-          {parsed.seq ? (
-            <>
-              {parsed.seq.length.toLocaleString()} bases · GC {gcPercent(parsed.seq).toFixed(1)}%
-              {parsed.ambiguous > 0 && <> · {parsed.ambiguous} ambiguous</>}
-              {parsed.dropped > 0 && <> · {parsed.dropped} non-DNA characters ignored</>}
-            </>
-          ) : (
-            "Nothing pasted yet."
-          )}
-        </div>
-        <div className="actions">
-          <button type="submit" className="primary" disabled={!db || busy || parsed.seq.length < 100}>
-            {busy ? "Searching…" : "Identify"}
-          </button>
-          <span className="or">or try</span>
-          {EXAMPLES.map((ex) => (
-            <button type="button" key={ex.file} className="chip" onClick={() => loadExample(ex.file)}>
-              {ex.label} <span className="chip-note">{ex.note}</span>
-            </button>
-          ))}
-        </div>
-        <p className="db-status" aria-live="polite">
-          {loadError
-            ? `Couldn't load the reference set: ${loadError}`
-            : db
-              ? `Reference set: COX1 from ${db.count.toLocaleString()} vertebrate species (${db.source}, built ${db.built}).`
-              : "Loading the reference set…"}
+      <main className="wrap">
+        <p className="intro">
+          Identify a vertebrate mitochondrial sequence by its COX1 gene. Paste a barcode, part of COX1, or a whole
+          mitogenome, in FASTA or plain text. It's compared against COX1 from {speciesCount} species in NCBI RefSeq,
+          locally in your browser.
         </p>
-        {parsed.seq.length > 0 && parsed.seq.length < 100 && <p className="warn">Paste at least 100 bases.</p>}
-        {error && <p className="error">{error}</p>}
-      </form>
 
-      {result && hit && (
-        <section ref={resultsRef} className="results" aria-label="Results">
-          <div className={`panel verdict level-${result.verdict.level}`}>
-            <div className="verdict-label">{result.verdict.level === "none" ? "Result" : `Best guess · ${result.verdict.level}`}</div>
-            <div className="verdict-name">{result.verdict.label}</div>
-            <p>{result.verdict.text}</p>
-            <ul className="facts">
-              <li>{result.queryLength.toLocaleString()} bases searched</li>
-              {result.region && (
-                <li>
-                  COX1 found at {(result.region.start + 1).toLocaleString()}–{result.region.end.toLocaleString()}
-                </li>
-              )}
-              {result.reversed && <li>read on the reverse strand</li>}
-              {elapsed !== null && <li>{(elapsed / 1000).toFixed(2)} s</li>}
-            </ul>
+        <form onSubmit={submit}>
+          <label htmlFor="seq">Sequence</label>
+          <textarea id="seq" value={text} onChange={(e) => setText(e.target.value)} spellCheck={false} rows={9} />
+          <div className="under-input">
+            <span aria-live="polite">{inputInfo}</span>
+            <span>
+              Example:{" "}
+              {EXAMPLES.map((ex, i) => (
+                <span key={ex.file}>
+                  {i > 0 && " / "}
+                  <button type="button" className="linklike" onClick={() => loadExample(ex.file)}>
+                    {ex.label}
+                  </button>
+                </span>
+              ))}
+            </span>
           </div>
+          <button type="submit" className="submit" disabled={!db || busy || parsed.seq.length < 100}>
+            {busy ? "Searching..." : "Search"}
+          </button>
+          <span className="status" aria-live="polite">
+            {status}
+          </span>
+          {error && <p className="error">{error}</p>}
+        </form>
 
-          <div className="panel">
-            <h2>Closest species</h2>
+        {result && top && hit && (
+          <section ref={resultsRef} className="results" aria-label="Results">
+            <h2>Result</h2>
+            <p className="verdict">
+              {result.verdict.level === "none" ? (
+                <b>{result.verdict.label}.</b>
+              ) : (
+                <>
+                  Best match: <i className="sp">{top.ref.species}</i>, {pct(top.alignment.identity)} identical over{" "}
+                  {top.alignment.length.toLocaleString()} bp.
+                </>
+              )}{" "}
+              {result.verdict.text}
+            </p>
+            <p className="small muted">
+              Searched {result.queryLength.toLocaleString()} bp
+              {result.region && (
+                <>
+                  ; COX1 is at {(result.region.start + 1).toLocaleString()}-{result.region.end.toLocaleString()}
+                </>
+              )}
+              {result.reversed && <> on the reverse strand</>}
+              {elapsed !== null && <>; took {(elapsed / 1000).toFixed(1)} s</>}.
+            </p>
+
+            <h3>Top {result.hits.length} hits</h3>
             <div className="table-wrap">
               <table className="hits">
                 <thead>
                   <tr>
-                    <th scope="col">#</th>
+                    <th scope="col"></th>
                     <th scope="col">Species</th>
-                    <th scope="col">Group</th>
+                    <th scope="col" className="hide-narrow">Family</th>
+                    <th scope="col" className="hide-narrow">Accession</th>
                     <th scope="col" className="num">Identity</th>
-                    <th scope="col" className="num">Overlap</th>
+                    <th scope="col" className="num">Aligned</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -154,80 +163,77 @@ export default function App() {
                       onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setSelected(i)}
                       aria-selected={i === selected}
                     >
-                      <td>{i + 1}</td>
+                      <td className="num muted">{i + 1}</td>
                       <td>
-                        <i>{h.ref.species}</i>{" "}
-                        <a href={`https://www.ncbi.nlm.nih.gov/nuccore/${h.ref.acc}`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>
+                        <i>{h.ref.species}</i>
+                      </td>
+                      <td className="muted hide-narrow">{h.ref.family || h.ref.order || h.ref.class}</td>
+                      <td className="hide-narrow">
+                        <a href={`https://www.ncbi.nlm.nih.gov/nuccore/${h.ref.acc}`} onClick={(e) => e.stopPropagation()}>
                           {h.ref.acc}
                         </a>
                       </td>
-                      <td className="group">{[h.ref.family, h.ref.order, h.ref.class].filter(Boolean)[0]}</td>
-                      <td className="num">
-                        <span className="bar" style={{ "--w": pct(matchScore(h.alignment)) } as React.CSSProperties} />
-                        {pct(h.alignment.identity)}
-                      </td>
+                      <td className="num">{pct(h.alignment.identity)}</td>
                       <td className="num">{h.alignment.length.toLocaleString()} bp</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            <p className="note">Click a row to see its alignment below. Identity is measured over the overlapping region.</p>
-          </div>
+            <p className="small muted">Click a row to show its alignment below.</p>
 
-          {result.tree && (
-            <div className="panel" ref={treeRef}>
-              <h2>Where it sits</h2>
-              <TreeView tree={result.tree} width={treeWidth} />
-              <p className="note">
-                Neighbor-joining tree from Jukes–Cantor distances, midpoint-rooted. A quick guide to relationships, not a
-                published phylogeny.
-              </p>
-            </div>
-          )}
+            {result.tree && (
+              <>
+                <h3>Neighbor-joining tree</h3>
+                <div ref={treeRef}>
+                  <TreeView tree={result.tree} width={treeWidth} />
+                </div>
+                <p className="small muted">
+                  Jukes-Cantor distances, midpoint rooted. It's built from one gene, so treat it as a rough guide.
+                </p>
+              </>
+            )}
 
-          <div className="panel">
-            <h2>
+            <h3>
               Alignment with <i>{hit.ref.species}</i>
-            </h2>
-            <p className="note">
+            </h3>
+            <p className="small muted">
               {hit.alignment.matches.toLocaleString()} identical, {hit.alignment.mismatches} substitutions,{" "}
-              {hit.alignment.gaps} gap positions. Differences are highlighted.
+              {hit.alignment.gaps} gap positions.
             </p>
             <AlignmentView alignment={hit.alignment} refName={hit.ref.species} offset={result.region?.start ?? 0} />
-          </div>
-        </section>
-      )}
+          </section>
+        )}
 
-      <footer className="panel about">
-        <h2>How it works</h2>
-        <ol>
-          <li>
-            <b>Screen.</b> Your sequence and all {db ? db.count.toLocaleString() : "7,000+"} references are reduced to
-            FracMinHash sketches of 11-base k-mers (both strands), and the 25 references sharing the most are kept.
-          </li>
-          <li>
-            <b>Locate.</b> Exact k-mer matches with the best reference show which strand carries COX1 and, for a long
-            sequence like a whole mitogenome, where the gene is.
-          </li>
-          <li>
-            <b>Align.</b> Each candidate is aligned to that region (Needleman–Wunsch with free end gaps) to get exact
-            identity.
-          </li>
-          <li>
-            <b>Place.</b> Pairwise distances (Jukes–Cantor) feed a neighbor-joining tree, rooted at its midpoint.
-          </li>
-        </ol>
-        <p>
-          Everything runs in your browser; nothing you paste is uploaded. The reference set is built from NCBI RefSeq with
-          a Python script, and the same COX1 genes come out of my{" "}
-          <a href={PIPELINE} target="_blank" rel="noreferrer">
-            mitogenome assembly pipeline
-          </a>
-          . Identity thresholds (≥98% same species, ≥92% same genus) are rules of thumb for vertebrate COX1 and vary by
-          group. <a href={GITHUB} target="_blank" rel="noreferrer">Source on GitHub</a>.
-        </p>
-      </footer>
-    </div>
+        <section id="about" className="about">
+          <h2>About</h2>
+          <p>
+            I made this as a side project while working on mitochondrial genome assembly in an undergraduate research lab.
+            It compares your sequence to COX1, the gene used for animal DNA barcoding, from every vertebrate mitogenome in
+            NCBI RefSeq ({speciesCount} species).
+          </p>
+          <p>
+            The search first narrows the reference set down with k-mers. It uses both DNA 11-mers and amino-acid 5-mers
+            from a six-frame translation with the vertebrate mitochondrial code, since related species often differ only
+            at silent third codon positions. The top candidates are then aligned to your sequence (Needleman-Wunsch with
+            free end gaps), and a neighbor-joining tree is built from the pairwise distances.
+          </p>
+          <p>
+            As a rough rule for vertebrate COX1, 98% identity or more usually means the same species and 92% or more the
+            same genus, but it varies between groups. Invertebrates aren't in the reference set. Nothing you paste leaves
+            your computer.
+          </p>
+          <p>
+            The gibbon example was assembled from raw Illumina reads with my{" "}
+            <a href={PIPELINE}>mitogenome assembly pipeline</a>. The code and the script that builds the reference set
+            are on <a href={GITHUB}>GitHub</a>.
+          </p>
+          <p className="small muted">
+            Garrett Dungan
+            {db && <>, reference set built {db.built}</>}
+          </p>
+        </section>
+      </main>
+    </>
   );
 }

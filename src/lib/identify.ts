@@ -70,26 +70,26 @@ export function indexDatabase(db: Database): IndexedDatabase {
 /** Rough identity thresholds used in vertebrate COX1 barcoding. */
 export function verdictFor(hits: Hit[]): Verdict {
   const top = hits[0];
-  if (!top) return { level: "none", label: "No match", text: "Nothing in the reference set resembles this sequence." };
+  if (!top) return { level: "none", label: "No match", text: "Nothing in the reference set looks like this sequence." };
   const id = top.alignment.identity * 100;
   if (top.alignment.coverage < 0.5) {
-    return { level: "none", label: "No match", text: "Only a short stretch lines up with anything in the reference set; this may not be vertebrate COX1." };
+    return { level: "none", label: "No match", text: "Only a short stretch lines up with anything in the reference set. This may not be vertebrate COX1." };
   }
   const sp = top.ref.species;
   const genus = sp.split(" ")[0];
   if (id >= 98) {
-    return { level: "species", label: sp, text: `Matches ${sp} at ${id.toFixed(1)}%, within the usual range for the same species (≥98%).` };
+    return { level: "species", label: sp, text: "That's in the range usually seen within one species." };
   }
   if (id >= 92) {
-    return { level: "genus", label: `${genus} sp.`, text: `Closest to ${sp} (${id.toFixed(1)}%): probably the same genus, but likely a species missing from the reference set.` };
+    return { level: "genus", label: `${genus} sp.`, text: `Probably the same genus (${genus}), possibly a species that isn't in the reference set.` };
   }
   if (id >= 85 && top.ref.family) {
-    return { level: "family", label: top.ref.family, text: `Closest to ${sp} (${id.toFixed(1)}%): probably in the family ${top.ref.family}.` };
+    return { level: "family", label: top.ref.family, text: `Probably the same family (${top.ref.family}), but not a close match.` };
   }
   if (id >= 78 && top.ref.order) {
-    return { level: "order", label: top.ref.order, text: `Distant match to ${sp} (${id.toFixed(1)}%): probably in the order ${top.ref.order}.` };
+    return { level: "order", label: top.ref.order, text: `Only a distant match; maybe the same order (${top.ref.order}).` };
   }
-  return { level: "none", label: "No close match", text: `Best match is ${sp} at only ${id.toFixed(1)}%; this sequence may not be vertebrate COX1.` };
+  return { level: "none", label: "No close match", text: `The best hit is only ${id.toFixed(1)}% identical. This may not be vertebrate COX1.` };
 }
 
 /** Which strand of the query carries the gene, and where it lies. Counts exact
