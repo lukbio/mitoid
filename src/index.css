@@ -214,6 +214,9 @@ a:focus-visible {
 .hits tbody tr.selected {
   background: var(--row-sel);
 }
+.hits a {
+  text-underline-offset: 3px;
+}
 .hits .num {
   text-align: right;
   white-space: nowrap;

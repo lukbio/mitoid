@@ -174,6 +174,33 @@ export function orient(query: string, ref: string): { seq: string; reversed: boo
   return { seq, reversed, region: { start: Math.max(0, lo - pad), end: Math.min(seq.length, hi + pad + 11) } };
 }
 
+/**
+ * Where the best hit's alignment lies in the sequence as the user pasted it
+ * (1-based, inclusive), or null when the gene wasn't located inside a longer
+ * sequence. The search works on a padded window, and on the reverse complement
+ * when the gene is on the other strand; this undoes both.
+ */
+export function geneLocation(result: Result): { start: number; end: number; reverse: boolean } | null {
+  const top = result.hits[0];
+  if (!result.region || !top) return null;
+  const start = result.region.start + top.alignment.aStart; // 0-based, oriented
+  const end = result.region.start + top.alignment.aEnd; // exclusive
+  if (!result.reversed) return { start: start + 1, end, reverse: false };
+  return { start: result.queryLength - end + 1, end: result.queryLength - start, reverse: true };
+}
+
+/** Rank labels for the hit table: hits whose identity ties (within 0.05%) share
+ * the first one's rank, marked "=", so a tie doesn't read as an ordering. */
+export function rankLabels(hits: Hit[]): string[] {
+  const same = (a: Hit, b: Hit) => Math.abs(a.alignment.identity - b.alignment.identity) < 0.0005;
+  let groupStart = 0;
+  return hits.map((h, i) => {
+    if (i > 0 && !same(h, hits[i - 1])) groupStart = i;
+    const tied = (i > 0 && same(h, hits[i - 1])) || (i + 1 < hits.length && same(h, hits[i + 1]));
+    return `${tied ? "=" : ""}${groupStart + 1}`;
+  });
+}
+
 /** Identity, discounted when the overlap covers under half the shorter sequence. */
 export function matchScore(a: Alignment): number {
   return a.coverage >= 0.5 ? a.identity : a.identity * a.coverage;

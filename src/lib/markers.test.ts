@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { align } from "./align";
-import { MARKER_RULES, verdictFor, type Hit, type RefRecord } from "./identify";
+import { geneLocation, MARKER_RULES, rankLabels, verdictFor, type Hit, type RefRecord, type Result } from "./identify";
 import { translate } from "./seq";
 
 describe("genetic codes", () => {
@@ -53,5 +53,31 @@ describe("marker thresholds", () => {
       expect(r.genus).toBeGreaterThan(r.family);
       expect(r.family).toBeGreaterThan(r.order);
     }
+  });
+});
+
+describe("result helpers", () => {
+  const ref: RefRecord = { acc: "X", species: "A b", class: "", order: "", family: "", seq: "" };
+  const hitAt = (aStart: number, aEnd: number, identity = 1): Hit => ({
+    ref,
+    screen: 1,
+    alignment: { ...align("A", "A"), aStart, aEnd, identity },
+  });
+  const result = (reversed: boolean, region: Result["region"], hits: Hit[]): Result => ({
+    gene: "matK", queryLength: 10000, reversed, region, hits, tree: null,
+    verdict: { level: "species", label: "", text: "" }, timings: {},
+  });
+
+  it("gene location undoes the window and the strand", () => {
+    // Window starts at 1,000; the gene is bases 150-1,665 of the window.
+    expect(geneLocation(result(false, { start: 1000, end: 3000 }, [hitAt(150, 1665)]))).toEqual({ start: 1151, end: 2665, reverse: false });
+    // Same on the reverse complement of a 10 kb sequence: positions flip.
+    expect(geneLocation(result(true, { start: 1000, end: 3000 }, [hitAt(150, 1665)]))).toEqual({ start: 7336, end: 8850, reverse: true });
+    expect(geneLocation(result(false, null, [hitAt(0, 500)]))).toBeNull();
+  });
+
+  it("marks tied ranks with =", () => {
+    const hits = [1, 1, 1, 0.998, 0.99, 0.99, 0.95].map((id) => hitAt(0, 1, id));
+    expect(rankLabels(hits)).toEqual(["=1", "=1", "=1", "4", "=5", "=5", "7"]);
   });
 });

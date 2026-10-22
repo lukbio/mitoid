@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from "react";
-import type { Result } from "../lib/identify";
+import { geneLocation, rankLabels, type Result } from "../lib/identify";
 import { AlignmentView } from "./AlignmentView";
 import { TreeView } from "./TreeView";
 
@@ -27,6 +27,8 @@ export function ResultView({ result, heading }: { result: Result; heading: strin
   const hit = result.hits[selected] ?? top;
   if (!top || !hit) return null;
   const gene = result.gene;
+  const where = geneLocation(result);
+  const ranks = rankLabels(result.hits);
 
   return (
     <section className="results" aria-label={heading}>
@@ -43,15 +45,10 @@ export function ResultView({ result, heading }: { result: Result; heading: strin
         {result.verdict.text}
       </p>
       <p className="small muted">
-        {result.region && (
+        {where && (
           <>
-            {/* Report positions on the sequence as pasted; the search worked on the
-                reverse complement when the gene was on the other strand. */}
-            {gene} is at{" "}
-            {result.reversed
-              ? `${(result.queryLength - result.region.end + 1).toLocaleString()}-${(result.queryLength - result.region.start).toLocaleString()}`
-              : `${(result.region.start + 1).toLocaleString()}-${result.region.end.toLocaleString()}`}
-            {result.reversed ? " on the reverse strand" : ""}.
+            {gene} is at {where.start.toLocaleString()}-{where.end.toLocaleString()}
+            {where.reverse ? " on the reverse strand" : ""} of your sequence.
           </>
         )}
         {!result.region && result.reversed && <>Read on the reverse strand.</>}
@@ -80,7 +77,9 @@ export function ResultView({ result, heading }: { result: Result; heading: strin
                 onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setSelected(i)}
                 aria-selected={i === selected}
               >
-                <td className="num muted">{i + 1}</td>
+                <td className="num muted" title={ranks[i].startsWith("=") ? "Tied with the rows around it" : undefined}>
+                  {ranks[i]}
+                </td>
                 <td>
                   <i>{h.ref.species}</i>
                 </td>
@@ -97,7 +96,10 @@ export function ResultView({ result, heading }: { result: Result; heading: strin
           </tbody>
         </table>
       </div>
-      <p className="small muted">Click a row to show its alignment below.</p>
+      <p className="small muted">
+        Click a row to show its alignment below.
+        {ranks.some((r) => r.startsWith("=")) && " Rows marked = are tied, so their order means nothing."}
+      </p>
 
       {result.tree && (
         <>
