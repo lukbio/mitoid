@@ -80,6 +80,12 @@ describe("sketch", () => {
   it("counts shared values of sorted arrays", () => {
     expect(intersectSize(Uint32Array.from([1, 3, 5, 9]), Uint32Array.from([2, 3, 9, 10]))).toBe(2);
   });
+  it("gives the same count when one array is much larger (binary-search path)", () => {
+    const big = Uint32Array.from({ length: 5000 }, (_, i) => i * 3);
+    const small = Uint32Array.from([0, 4, 9, 300, 14997, 20000]);
+    expect(intersectSize(small, big)).toBe(4);
+    expect(intersectSize(big, small)).toBe(4);
+  });
 });
 
 describe("align", () => {
@@ -190,6 +196,16 @@ describe("identify", () => {
   });
   it("rejects very short input", () => {
     expect(() => identify("ACGT", idx)).toThrow(/too short/);
+  });
+  it("finds the gene in a long sequence despite chance matches elsewhere", () => {
+    // Sprinkle short pieces of the gene far away from the real copy.
+    const decoys = [0, 1, 2, 3, 4, 5].map((k) => randomDna(9000, 200 + k) + gene.slice(k * 200, k * 200 + 40)).join("");
+    const genome = decoys + randomDna(2000, 300) + gene + randomDna(20000, 301);
+    const { region } = orient(genome, gene);
+    const start = decoys.length + 2000;
+    expect(region).not.toBeNull();
+    expect(region!.start).toBeGreaterThan(start - 400);
+    expect(region!.end).toBeLessThan(start + gene.length + 400);
   });
   it("orient leaves short queries unwindowed", () => {
     expect(orient(gene.slice(0, 500), gene).region).toBeNull();

@@ -1,47 +1,67 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AlignmentView } from "./components/AlignmentView";
-import { TreeView } from "./components/TreeView";
-import type { Hit } from "./lib/identify";
+import { useEffect, useRef, useState } from "react";
+import { ResultView } from "./components/ResultView";
+import type { Result } from "./lib/identify";
 import { gcPercent, parseInput } from "./lib/seq";
 import { useIdentifier } from "./useIdentifier";
+import type { Mode } from "./worker";
 
-const EXAMPLES = [
-  { file: "toad_barcode.fasta", label: "American toad, COX1 barcode (658 bp)" },
-  { file: "gibbon_mitogenome.fasta", label: "gibbon, whole mitogenome (16.5 kb)" },
-];
+const EXAMPLES: Record<Mode, { file: string; label: string }[]> = {
+  animals: [
+    { file: "toad_barcode.fasta", label: "American toad, COX1 barcode (658 bp)" },
+    { file: "gibbon_mitogenome.fasta", label: "gibbon, whole mitogenome (16.5 kb)" },
+  ],
+  plants: [
+    { file: "oak_matk.fasta", label: "English oak, matK (889 bp)" },
+    { file: "arabidopsis_chloroplast.fasta", label: "thale cress, whole chloroplast genome (154 kb)" },
+  ],
+};
 const GITHUB = "https://github.com/yeezy1218/mitoid";
 const PIPELINE = "https://github.com/yeezy1218/mitogenome-pipeline";
 
-const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+function savedMode(): Mode {
+  try {
+    return localStorage.getItem("mitoid.mode") === "plants" ? "plants" : "animals";
+  } catch {
+    return "animals";
+  }
+}
 
-/** Tracks an element's content width; the callback ref works for elements
- * that mount later (the tree only exists once there's a result). */
-function useWidth<T extends HTMLElement>() {
-  const [width, setWidth] = useState(720);
-  const observer = useRef<ResizeObserver | null>(null);
-  const ref = useCallback((el: T | null) => {
-    observer.current?.disconnect();
-    if (!el) return;
-    observer.current = new ResizeObserver(([e]) => setWidth(Math.round(e.contentRect.width)));
-    observer.current.observe(el);
-  }, []);
-  return [ref, width] as const;
+/** A marker counts as found when its best hit lines up over at least half the gene. */
+const found = (r: Result) => r.verdict.level !== "none" || (r.hits[0]?.alignment.coverage ?? 0) >= 0.5;
+
+/** One sentence on whether two markers agree (plants: rbcL and matK). */
+function agreement(results: Result[]): string | null {
+  if (results.length < 2) return null;
+  const [a, b] = results.map((r) => r.hits[0].ref.species);
+  if (a === b) return `Both ${results[0].gene} and ${results[1].gene} point to ${a}.`;
+  const [ga, gb] = [a, b].map((s) => s.split(" ")[0]);
+  if (ga === gb) return `${results[0].gene} and ${results[1].gene} agree on the genus (${ga}) but not the species.`;
+  return `${results[0].gene} and ${results[1].gene} disagree (${a} vs. ${b}); the sequence may be mixed or misidentified.`;
 }
 
 export default function App() {
-  const { db, loadError, busy, result, error, elapsed, identify, reset } = useIdentifier();
+  const [mode, setMode] = useState<Mode>(savedMode);
+  const { sets, loadError, busy, results, error, elapsed, identify, reset } = useIdentifier(mode);
   const [text, setText] = useState("");
-  const [selected, setSelected] = useState(0);
-  const [treeRef, treeWidth] = useWidth<HTMLDivElement>();
   const parsed = parseInput(text);
-  const resultsRef = useRef<HTMLElement>(null);
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (result) {
-      setSelected(0);
-      resultsRef.current?.scrollIntoView({ block: "start" });
+    try {
+      localStorage.setItem("mitoid.mode", mode);
+    } catch {
+      /* private mode etc.; not important */
     }
-  }, [result]);
+  }, [mode]);
+
+  useEffect(() => {
+    if (results) resultsRef.current?.scrollIntoView({ block: "start" });
+  }, [results]);
+
+  const switchMode = (m: Mode) => {
+    setMode(m);
+    reset();
+  };
 
   const loadExample = async (file: string) => {
     const res = await fetch(`${import.meta.env.BASE_URL}examples/${file}`);
@@ -54,9 +74,9 @@ export default function App() {
     if (parsed.seq) identify(parsed.seq);
   };
 
-  const top: Hit | undefined = result?.hits[0];
-  const hit: Hit | undefined = result?.hits[selected];
-  const speciesCount = db ? db.count.toLocaleString() : "about 7,700";
+  const animal = mode === "animals";
+  const markers = animal ? "COX1" : "rbcL and matK";
+  const speciesCount = sets ? sets.map((s) => `${s.count.toLocaleString()} (${s.gene})`).join(" and ") : "...";
 
   let inputInfo = "";
   if (parsed.seq) {
@@ -67,8 +87,11 @@ export default function App() {
 
   let status = "";
   if (loadError) status = `Couldn't load the reference set (${loadError}).`;
-  else if (!db) status = "Loading reference set...";
+  else if (!sets) status = "Loading reference set...";
   else if (parsed.seq.length > 0 && parsed.seq.length < 100) status = "Needs at least 100 bp.";
+
+  const shown = results ? (results.filter(found).length ? results.filter(found) : results.slice(0, 1)) : [];
+  const agree = agreement(results ? results.filter(found) : []);
 
   return (
     <>
@@ -83,10 +106,29 @@ export default function App() {
       </header>
 
       <main className="wrap">
+        <fieldset className="mode">
+          <legend className="visually-hidden">Organisms</legend>
+          {(["animals", "plants"] as const).map((m) => (
+            <label key={m} className={m === mode ? "on" : undefined}>
+              <input type="radio" name="mode" value={m} checked={m === mode} onChange={() => switchMode(m)} />
+              {m === "animals" ? "Animals (COX1)" : "Plants (rbcL + matK)"}
+            </label>
+          ))}
+        </fieldset>
+
         <p className="intro">
-          Identify a vertebrate mitochondrial sequence by its COX1 gene. Paste a barcode, part of COX1, or a whole
-          mitogenome, in FASTA or plain text. It's compared against COX1 from {speciesCount} species in NCBI RefSeq,
-          locally in your browser.
+          {animal ? (
+            <>
+              Identify a vertebrate mitochondrial sequence by its COX1 gene. Paste a barcode, part of COX1, or a whole
+              mitogenome, in FASTA or plain text.
+            </>
+          ) : (
+            <>
+              Identify a land plant or green alga by its chloroplast barcodes, rbcL and matK. Paste either gene, both, or
+              a whole chloroplast genome, in FASTA or plain text.
+            </>
+          )}{" "}
+          It's compared against {markers} from NCBI RefSeq, locally in your browser.
         </p>
 
         <form onSubmit={submit}>
@@ -96,7 +138,7 @@ export default function App() {
             <span aria-live="polite">{inputInfo}</span>
             <span>
               Example:{" "}
-              {EXAMPLES.map((ex, i) => (
+              {EXAMPLES[mode].map((ex, i) => (
                 <span key={ex.file}>
                   {i > 0 && " / "}
                   <button type="button" className="linklike" onClick={() => loadExample(ex.file)}>
@@ -106,7 +148,7 @@ export default function App() {
               ))}
             </span>
           </div>
-          <button type="submit" className="submit" disabled={!db || busy || parsed.seq.length < 100}>
+          <button type="submit" className="submit" disabled={!sets || busy || parsed.seq.length < 100}>
             {busy ? "Searching..." : "Search"}
           </button>
           <span className="status" aria-live="polite">
@@ -115,116 +157,46 @@ export default function App() {
           {error && <p className="error">{error}</p>}
         </form>
 
-        {result && top && hit && (
-          <section ref={resultsRef} className="results" aria-label="Results">
-            <h2>Result</h2>
-            <p className="verdict">
-              {result.verdict.level === "none" ? (
-                <b>{result.verdict.label}.</b>
-              ) : (
-                <>
-                  Best match: <i className="sp">{top.ref.species}</i>, {pct(top.alignment.identity)} identical over{" "}
-                  {top.alignment.length.toLocaleString()} bp.
-                </>
-              )}{" "}
-              {result.verdict.text}
-            </p>
-            <p className="small muted">
-              Searched {result.queryLength.toLocaleString()} bp
-              {result.region && (
-                <>
-                  ; COX1 is at {(result.region.start + 1).toLocaleString()}-{result.region.end.toLocaleString()}
-                </>
+        {results && results.length > 0 && (
+          <div ref={resultsRef} className="results-all">
+            <p className="small muted searched">
+              Searched {results[0].queryLength.toLocaleString()} bp against {markers}
+              {elapsed !== null && <> in {(elapsed / 1000).toFixed(1)} s</>}.
+              {!animal && shown.length === 1 && results.length > 1 && found(shown[0]) && (
+                <> Only {shown[0].gene} was found in your sequence.</>
               )}
-              {result.reversed && <> on the reverse strand</>}
-              {elapsed !== null && <>; took {(elapsed / 1000).toFixed(1)} s</>}.
             </p>
-
-            <h3>Top {result.hits.length} hits</h3>
-            <div className="table-wrap">
-              <table className="hits">
-                <thead>
-                  <tr>
-                    <th scope="col"></th>
-                    <th scope="col">Species</th>
-                    <th scope="col" className="hide-narrow">Family</th>
-                    <th scope="col" className="hide-narrow">Accession</th>
-                    <th scope="col" className="num">Identity</th>
-                    <th scope="col" className="num">Aligned</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.hits.map((h, i) => (
-                    <tr
-                      key={h.ref.acc}
-                      className={i === selected ? "selected" : undefined}
-                      onClick={() => setSelected(i)}
-                      tabIndex={0}
-                      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setSelected(i)}
-                      aria-selected={i === selected}
-                    >
-                      <td className="num muted">{i + 1}</td>
-                      <td>
-                        <i>{h.ref.species}</i>
-                      </td>
-                      <td className="muted hide-narrow">{h.ref.family || h.ref.order || h.ref.class}</td>
-                      <td className="hide-narrow">
-                        <a href={`https://www.ncbi.nlm.nih.gov/nuccore/${h.ref.acc}`} onClick={(e) => e.stopPropagation()}>
-                          {h.ref.acc}
-                        </a>
-                      </td>
-                      <td className="num">{pct(h.alignment.identity)}</td>
-                      <td className="num">{h.alignment.length.toLocaleString()} bp</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <p className="small muted">Click a row to show its alignment below.</p>
-
-            {result.tree && (
-              <>
-                <h3>Neighbor-joining tree</h3>
-                <div ref={treeRef}>
-                  <TreeView tree={result.tree} width={treeWidth} />
-                </div>
-                <p className="small muted">
-                  Jukes-Cantor distances, midpoint rooted. It's built from one gene, so treat it as a rough guide.
-                </p>
-              </>
-            )}
-
-            <h3>
-              Alignment with <i>{hit.ref.species}</i>
-            </h3>
-            <p className="small muted">
-              {hit.alignment.matches.toLocaleString()} identical, {hit.alignment.mismatches} substitutions,{" "}
-              {hit.alignment.gaps} gap positions.
-            </p>
-            <AlignmentView alignment={hit.alignment} refName={hit.ref.species} offset={result.region?.start ?? 0} />
-          </section>
+            {agree && <p className="agree">{agree}</p>}
+            {shown.map((r) => (
+              <ResultView key={`${r.gene}-${results.indexOf(r)}`} result={r} heading={animal ? "Result" : `${r.gene} result`} />
+            ))}
+          </div>
         )}
 
         <section id="about" className="about">
           <h2>About</h2>
           <p>
-            MitoID compares your sequence to COX1, the gene used for animal DNA barcoding, from every vertebrate mitogenome in
-            NCBI RefSeq ({speciesCount} species).
+            MitoID compares your sequence to standard DNA barcode genes. For vertebrates that's COX1, from every
+            mitogenome in NCBI RefSeq. Plant mitochondrial genes change too slowly to tell species apart, so for plants it
+            uses the chloroplast genes rbcL and matK (the plant barcode chosen by the Consortium for the Barcode of Life),
+            from every chloroplast genome in RefSeq. Current reference sets: {speciesCount} species.
           </p>
           <p>
             The search first narrows the reference set down with k-mers. It uses both DNA 11-mers and amino-acid 5-mers
-            from a six-frame translation with the vertebrate mitochondrial code, since related species often differ only
-            at silent third codon positions. The top candidates are then aligned to your sequence (Needleman-Wunsch with
-            free end gaps), and a neighbor-joining tree is built from the pairwise distances.
+            from a six-frame translation (vertebrate mitochondrial code for COX1, the plastid code for rbcL and matK), since
+            related species often differ only at silent third codon positions. The top candidates are then aligned to your
+            sequence (Needleman-Wunsch with free end gaps), and a neighbor-joining tree is built from the pairwise
+            distances.
           </p>
           <p>
             As a rough rule for vertebrate COX1, 98% identity or more usually means the same species and 92% or more the
-            same genus, but it varies between groups. Invertebrates aren't in the reference set. Nothing you paste leaves
-            your computer.
+            same genus. rbcL is much more conserved: different species in one genus are often identical, so it's best at
+            genus and family level, and matK is the better marker for species. Invertebrates and fungi aren't in the
+            reference sets. Nothing you paste leaves your computer.
           </p>
           <p>
             The gibbon example was assembled from raw Illumina reads with my{" "}
-            <a href={PIPELINE}>mitogenome assembly pipeline</a>. The code and the script that builds the reference set
+            <a href={PIPELINE}>mitogenome assembly pipeline</a>. The code and the scripts that build the reference sets
             are on <a href={GITHUB}>GitHub</a>.
           </p>
         </section>

@@ -293,3 +293,47 @@ a:focus-visible {
     display: none;
   }
 }
+
+.mode {
+  border: none;
+  padding: 0;
+  margin: 16px 0 0;
+  display: flex;
+  gap: 0;
+}
+.mode label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 14px;
+  min-height: 36px;
+  border: 1px solid var(--field-border);
+  font-weight: 400;
+  font-size: 14px;
+  cursor: pointer;
+}
+.mode label + label {
+  border-left: none;
+}
+.mode label.on {
+  background: var(--row-alt);
+  font-weight: 600;
+}
+.mode input {
+  margin: 0;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+.searched {
+  margin-top: 24px;
+}
+.agree {
+  font-weight: 600;
+  margin: 4px 0 0;
+}

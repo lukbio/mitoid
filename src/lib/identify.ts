@@ -16,6 +16,8 @@ export interface RefRecord {
 
 export interface Database {
   gene: string;
+  /** NCBI genetic code of the reference genes (2 = vertebrate mitochondrial, 11 = plastid). */
+  code?: number;
   built: string;
   source: string;
   count: number;
@@ -35,10 +37,12 @@ export interface Hit {
 }
 
 export interface Result {
+  /** The marker gene searched (COX1, rbcL, matK). */
+  gene: string;
   queryLength: number;
-  /** Whether the query had to be reverse-complemented to match COX1. */
+  /** Whether the query had to be reverse-complemented to match the gene. */
   reversed: boolean;
-  /** Where COX1 sits in the (oriented) query, when the query is longer than the gene. */
+  /** Where the gene sits in the (oriented) query, when the query is longer than the gene. */
   region: { start: number; end: number } | null;
   hits: Hit[];
   tree: TreeNode | null;
@@ -63,33 +67,73 @@ export function indexDatabase(db: Database): IndexedDatabase {
   return {
     ...db,
     sketches: db.records.map((r) => sketch(r.seq)),
-    proteins: db.records.map((r) => proteinKmers([translate(r.seq)])),
+    proteins: db.records.map((r) => proteinKmers([translate(r.seq, db.code ?? 2)])),
   };
 }
 
-/** Rough identity thresholds used in vertebrate COX1 barcoding. */
-export function verdictFor(hits: Hit[]): Verdict {
+interface MarkerRules {
+  /** What the sequence should be, for "this may not be ..." messages. */
+  what: string;
+  /** Minimum % identity for each level. */
+  species: number;
+  genus: number;
+  family: number;
+  order: number;
+  /** Said with a species-level match. */
+  speciesNote: string;
+}
+
+/** Rough barcoding rules of thumb. COX1 separates vertebrate species well;
+ * rbcL is so conserved that species in one genus are often identical, and matK
+ * sits in between. */
+export const MARKER_RULES: Record<string, MarkerRules> = {
+  COX1: { what: "vertebrate COX1", species: 98, genus: 92, family: 85, order: 78, speciesNote: "That's in the range usually seen within one species." },
+  matK: { what: "plant matK", species: 99, genus: 96, family: 90, order: 85, speciesNote: "matK usually separates plant species, but closely related ones can still be identical." },
+  rbcL: { what: "plant rbcL", species: 99.5, genus: 98, family: 94, order: 90, speciesNote: "rbcL is very conserved, so other species in the same genus may match just as well. Check matK too." },
+};
+
+export function verdictFor(hits: Hit[], gene = "COX1"): Verdict {
+  const rules = MARKER_RULES[gene] ?? MARKER_RULES.COX1;
   const top = hits[0];
   if (!top) return { level: "none", label: "No match", text: "Nothing in the reference set looks like this sequence." };
   const id = top.alignment.identity * 100;
   if (top.alignment.coverage < 0.5) {
-    return { level: "none", label: "No match", text: "Only a short stretch lines up with anything in the reference set. This may not be vertebrate COX1." };
+    return { level: "none", label: "No match", text: `Only a short stretch lines up with anything in the reference set. This may not be ${rules.what}.` };
   }
   const sp = top.ref.species;
   const genus = sp.split(" ")[0];
-  if (id >= 98) {
-    return { level: "species", label: sp, text: "That's in the range usually seen within one species." };
+  if (id >= rules.species) {
+    // Several species can be equally close (oaks share chloroplasts, for one).
+    // Then the gene can't decide between them, so don't name just one.
+    const tied = [...new Set(
+      hits
+        .filter((h) => h.alignment.coverage >= 0.5 && top.alignment.identity - h.alignment.identity < 0.0005)
+        .map((h) => h.ref.species),
+    )];
+    if (tied.length > 1) {
+      const genera = new Set(tied.map((s) => s.split(" ")[0]));
+      const many = `${tied.length}${tied.length === hits.length ? " or more" : ""}`;
+      if (genera.size === 1) {
+        return { level: "genus", label: `${genus} sp.`, text: `${many} ${genus} species match equally well, so ${gene} can't tell them apart here.` };
+      }
+      return {
+        level: top.ref.family ? "family" : "none",
+        label: top.ref.family || "Several genera",
+        text: `${many} species from different genera match equally well, so ${gene} can't tell them apart here.`,
+      };
+    }
+    return { level: "species", label: sp, text: rules.speciesNote };
   }
-  if (id >= 92) {
+  if (id >= rules.genus) {
     return { level: "genus", label: `${genus} sp.`, text: `Probably the same genus (${genus}), possibly a species that isn't in the reference set.` };
   }
-  if (id >= 85 && top.ref.family) {
+  if (id >= rules.family && top.ref.family) {
     return { level: "family", label: top.ref.family, text: `Probably the same family (${top.ref.family}), but not a close match.` };
   }
-  if (id >= 78 && top.ref.order) {
+  if (id >= rules.order && top.ref.order) {
     return { level: "order", label: top.ref.order, text: `Only a distant match; maybe the same order (${top.ref.order}).` };
   }
-  return { level: "none", label: "No close match", text: `The best hit is only ${id.toFixed(1)}% identical. This may not be vertebrate COX1.` };
+  return { level: "none", label: "No close match", text: `The best hit is only ${id.toFixed(1)}% identical. This may not be ${rules.what}.` };
 }
 
 /** Which strand of the query carries the gene, and where it lies. Counts exact
@@ -112,9 +156,20 @@ export function orient(query: string, ref: string): { seq: string; reversed: boo
   const pos = reversed ? revPos : fwdPos;
   if (query.length <= ref.length + 300 || pos.length < 5) return { seq, reversed, region: null };
   pos.sort((a, b) => a - b);
-  // Ignore stray matches outside the gene: trim 2% at each end of the hit cloud.
-  const lo = pos[Math.floor(pos.length * 0.02)];
-  const hi = pos[Math.ceil(pos.length * 0.98) - 1];
+  // In a long sequence (a 150 kb chloroplast genome) short k-mers also match by
+  // chance far from the gene, so take the densest gene-length stretch of hits.
+  const span = Math.round(ref.length * 1.3);
+  let lo = pos[0];
+  let hi = pos[0];
+  let bestCount = 0;
+  for (let i = 0, j = 0; i < pos.length; i++) {
+    while (pos[i] - pos[j] > span) j++;
+    if (i - j + 1 > bestCount) {
+      bestCount = i - j + 1;
+      lo = pos[j];
+      hi = pos[i];
+    }
+  }
   const pad = 150;
   return { seq, reversed, region: { start: Math.max(0, lo - pad), end: Math.min(seq.length, hi + pad + 11) } };
 }
@@ -138,7 +193,7 @@ export function identify(query: string, db: IndexedDatabase, now: () => number =
   // sequences well; protein k-mers (all six frames of the query) still find
   // relatives at 80-90% DNA identity, where shared DNA k-mers are mostly noise.
   const qs = sketch(query);
-  const qp = proteinKmers(sixFrames(query));
+  const qp = proteinKmers(sixFrames(query, db.code ?? 2));
   const byDna = db.sketches
     .map((s, i) => ({ i, score: containment(qs, s) }))
     .sort((a, b) => b.score - a.score)
@@ -183,5 +238,5 @@ export function identify(query: string, db: IndexedDatabase, now: () => number =
   }
   timings.tree = now() - t;
 
-  return { queryLength: query.length, reversed, region, hits, tree, verdict: verdictFor(hits), timings };
+  return { gene: db.gene, queryLength: query.length, reversed, region, hits, tree, verdict: verdictFor(hits, db.gene), timings };
 }

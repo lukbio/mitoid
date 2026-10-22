@@ -79,8 +79,14 @@ export function proteinKmers(proteins: string[]): Uint32Array {
   return Uint32Array.from(kept).sort();
 }
 
-/** Number of shared values between two sorted arrays. */
+/** Number of shared values between two sorted arrays. When one is far larger
+ * (a whole chloroplast genome against one gene), binary-search the small one's
+ * values in the large one instead of walking both: the screen runs this once
+ * per reference, ~12,000 times, so walking a 300,000-entry array each time is
+ * the difference between ~0.1 s and ~12 s. */
 export function intersectSize(a: Uint32Array, b: Uint32Array): number {
+  if (a.length > 16 * b.length) return intersectBySearch(b, a);
+  if (b.length > 16 * a.length) return intersectBySearch(a, b);
   let i = 0;
   let j = 0;
   let n = 0;
@@ -91,6 +97,23 @@ export function intersectSize(a: Uint32Array, b: Uint32Array): number {
       j++;
     } else if (a[i] < b[j]) i++;
     else j++;
+  }
+  return n;
+}
+
+function intersectBySearch(small: Uint32Array, large: Uint32Array): number {
+  let n = 0;
+  let lo = 0;
+  for (let i = 0; i < small.length; i++) {
+    const v = small[i];
+    // small is sorted too, so each search can start where the last one ended.
+    let hi = large.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (large[mid] < v) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo < large.length && large[lo] === v) n++;
   }
   return n;
 }

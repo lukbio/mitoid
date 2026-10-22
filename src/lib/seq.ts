@@ -46,27 +46,33 @@ export function reverseComplement(seq: string): string {
   return out;
 }
 
-// Vertebrate mitochondrial code (NCBI table 2), codons in TCAG order:
-// AGA/AGG are stops, ATA is Met, TGA is Trp.
+// NCBI genetic codes, codons in TCAG order.
+// Table 2, vertebrate mitochondria: AGA/AGG are stops, ATA is Met, TGA is Trp.
+// Table 11, bacteria and plastids: the standard code.
 const BASES = "TCAG";
-const TABLE2 = "FFLLSSSSYY**CCWWLLLLPPPPHHQQRRRRIIMMTTTTNNKKSS**VVVVAAAADDEEGGGG";
+const TABLES: Record<number, string> = {
+  2: "FFLLSSSSYY**CCWWLLLLPPPPHHQQRRRRIIMMTTTTNNKKSS**VVVVAAAADDEEGGGG",
+  11: "FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG",
+};
 
-/** Translate in frame 0; codons with N become X. */
-export function translate(seq: string): string {
+/** Translate in frame 0 with an NCBI genetic code; codons with N become X. */
+export function translate(seq: string, code = 2): string {
+  const table = TABLES[code];
+  if (!table) throw new Error(`Unsupported genetic code ${code}`);
   let out = "";
   for (let i = 0; i + 3 <= seq.length; i += 3) {
     const a = BASES.indexOf(seq[i]);
     const b = BASES.indexOf(seq[i + 1]);
     const c = BASES.indexOf(seq[i + 2]);
-    out += a < 0 || b < 0 || c < 0 ? "X" : TABLE2[a * 16 + b * 4 + c];
+    out += a < 0 || b < 0 || c < 0 ? "X" : table[a * 16 + b * 4 + c];
   }
   return out;
 }
 
 /** All six reading frames. */
-export function sixFrames(seq: string): string[] {
+export function sixFrames(seq: string, code = 2): string[] {
   const rc = reverseComplement(seq);
-  return [0, 1, 2].flatMap((f) => [translate(seq.slice(f)), translate(rc.slice(f))]);
+  return [0, 1, 2].flatMap((f) => [translate(seq.slice(f), code), translate(rc.slice(f), code)]);
 }
 
 export function gcPercent(seq: string): number {
