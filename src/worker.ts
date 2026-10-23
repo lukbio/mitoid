@@ -1,14 +1,16 @@
 /// <reference lib="webworker" />
 /** Loads and indexes reference sets on first use, then answers queries off the main thread. */
 
-import { identify, indexDatabase, type Database, type IndexedDatabase, type Result } from "./lib/identify";
+import { identify, indexDatabase, mergeDatabases, type Database, type IndexedDatabase, type Result } from "./lib/identify";
 
-export type Mode = "animals" | "plants";
+export type Mode = "animals" | "plants" | "fungi";
 
-/** Reference files per mode, searched in this order. */
-export const MODE_FILES: Record<Mode, string[]> = {
-  animals: ["cox1"],
-  plants: ["matk", "rbcl"],
+/** Reference sets per mode, searched in this order; files in one group are the
+ * same gene and are searched as one set. */
+export const MODE_FILES: Record<Mode, string[][]> = {
+  animals: [["cox1", "cox1_inv"]],
+  plants: [["matk"], ["rbcl"]],
+  fungi: [["its"]],
 };
 
 export interface SetInfo {
@@ -27,7 +29,7 @@ export type WorkerResponse =
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 const loading = new Map<Mode, Promise<IndexedDatabase[]>>();
 
-async function fetchSet(name: string): Promise<IndexedDatabase> {
+async function fetchSet(name: string): Promise<Database> {
   const res = await fetch(`${import.meta.env.BASE_URL}db/${name}.json.gz`);
   if (!res.ok) throw new Error(`could not load ${name} (${res.status})`);
   // Servers may or may not decompress for us; check the gzip magic bytes.
@@ -36,14 +38,18 @@ async function fetchSet(name: string): Promise<IndexedDatabase> {
   const text = gz
     ? await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).text()
     : new TextDecoder().decode(bytes);
-  return indexDatabase(JSON.parse(text) as Database);
+  return JSON.parse(text) as Database;
+}
+
+async function fetchGroup(names: string[]): Promise<IndexedDatabase> {
+  return indexDatabase(mergeDatabases(await Promise.all(names.map(fetchSet))));
 }
 
 function load(mode: Mode): Promise<IndexedDatabase[]> {
   let p = loading.get(mode);
   if (!p) {
     const t = performance.now();
-    p = Promise.all(MODE_FILES[mode].map(fetchSet));
+    p = Promise.all(MODE_FILES[mode].map(fetchGroup));
     loading.set(mode, p);
     p.then(
       (dbs) =>

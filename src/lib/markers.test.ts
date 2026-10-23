@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { align } from "./align";
-import { geneLocation, MARKER_RULES, rankLabels, verdictFor, type Hit, type RefRecord, type Result } from "./identify";
+import { geneLocation, MARKER_RULES, mergeDatabases, rankLabels, verdictFor, type Hit, type RefRecord, type Result } from "./identify";
 import { translate } from "./seq";
 
 describe("genetic codes", () => {
@@ -10,7 +10,7 @@ describe("genetic codes", () => {
     expect(translate("ATATGAAGA", 11)).toBe("I*R");
   });
   it("rejects codes it doesn't know", () => {
-    expect(() => translate("ATG", 5)).toThrow(/genetic code 5/);
+    expect(() => translate("ATG", 3)).toThrow(/genetic code 3/);
   });
 });
 
@@ -79,5 +79,27 @@ describe("result helpers", () => {
   it("marks tied ranks with =", () => {
     const hits = [1, 1, 1, 0.998, 0.99, 0.99, 0.95].map((id) => hitAt(0, 1, id));
     expect(rankLabels(hits)).toEqual(["=1", "=1", "=1", "4", "=5", "=5", "7"]);
+  });
+});
+
+describe("animal genetic codes", () => {
+  it("translates the codons that differ between mitochondrial codes", () => {
+    // AGA, ATA, TGA, AAA under vertebrate, invertebrate, echinoderm and cnidarian codes.
+    expect(translate("AGAATATGAAAA", 2)).toBe("*MWK");
+    expect(translate("AGAATATGAAAA", 5)).toBe("SMWK");
+    expect(translate("AGAATATGAAAA", 9)).toBe("SIWN");
+    expect(translate("AGAATATGAAAA", 4)).toBe("RIWK");
+  });
+
+  it("merged sets keep each record's code", () => {
+    const rec = (acc: string, code?: number): RefRecord => ({ acc, species: acc, class: "", order: "", family: "", code, seq: "" });
+    const base = { gene: "COX1", built: "2026-01-01", source: "x" };
+    const merged = mergeDatabases([
+      { ...base, code: 2, count: 1, records: [rec("vert")] },
+      { ...base, code: 5, built: "2026-02-01", count: 2, records: [rec("fly", 5), rec("urchin", 9)] },
+    ]);
+    expect(merged.records.map((r) => r.code)).toEqual([2, 5, 9]);
+    expect(merged.count).toBe(3);
+    expect(merged.built).toBe("2026-02-01");
   });
 });

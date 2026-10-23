@@ -11,12 +11,15 @@ export interface RefRecord {
   class: string;
   order: string;
   family: string;
+  /** NCBI genetic code of this gene, when it differs from the set's (invertebrates vary). */
+  code?: number;
   seq: string;
 }
 
 export interface Database {
   gene: string;
-  /** NCBI genetic code of the reference genes (2 = vertebrate mitochondrial, 11 = plastid). */
+  /** Default NCBI genetic code of the reference genes (2 = vertebrate mitochondrial, 11 = plastid,
+   * 0 = not protein-coding, like fungal ITS: no protein screen). */
   code?: number;
   built: string;
   source: string;
@@ -67,7 +70,22 @@ export function indexDatabase(db: Database): IndexedDatabase {
   return {
     ...db,
     sketches: db.records.map((r) => sketch(r.seq)),
-    proteins: db.records.map((r) => proteinKmers([translate(r.seq, db.code ?? 2)])),
+    proteins: db.code === 0 ? [] : db.records.map((r) => proteinKmers([translate(r.seq, r.code ?? db.code ?? 2)])),
+  };
+}
+
+/** Several sets of the same gene searched as one (vertebrate + invertebrate
+ * COX1). Each record keeps its own genetic code. */
+export function mergeDatabases(dbs: Database[]): Database {
+  if (dbs.length === 1) return dbs[0];
+  const records = dbs.flatMap((d) => d.records.map((r) => ({ ...r, code: r.code ?? d.code ?? 2 })));
+  return {
+    gene: dbs[0].gene,
+    code: dbs[0].code,
+    built: dbs.map((d) => d.built).sort().reverse()[0],
+    source: dbs.map((d) => d.source).join("; "),
+    count: records.length,
+    records,
   };
 }
 
@@ -87,9 +105,11 @@ interface MarkerRules {
  * rbcL is so conserved that species in one genus are often identical, and matK
  * sits in between. */
 export const MARKER_RULES: Record<string, MarkerRules> = {
-  COX1: { what: "vertebrate COX1", species: 98, genus: 92, family: 85, order: 78, speciesNote: "That's in the range usually seen within one species." },
+  COX1: { what: "animal COX1", species: 98, genus: 92, family: 85, order: 78, speciesNote: "That's in the range usually seen within one species." },
   matK: { what: "plant matK", species: 99, genus: 96, family: 90, order: 85, speciesNote: "matK usually separates plant species, but closely related ones can still be identical." },
   rbcL: { what: "plant rbcL", species: 99.5, genus: 98, family: 94, order: 90, speciesNote: "rbcL is very conserved, so other species in the same genus may match just as well. Check matK too." },
+  // Cutoffs from Vu et al. 2019 (Studies in Mycology 92), fitted on ~10,000 fungal ITS sequences.
+  ITS: { what: "fungal ITS", species: 98.5, genus: 94.3, family: 88.5, order: 81.2, speciesNote: "That's within the 98.5% usually used for fungal species, though ITS can't separate every species complex." },
 };
 
 export function verdictFor(hits: Hit[], gene = "COX1"): Verdict {
@@ -220,13 +240,21 @@ export function identify(query: string, db: IndexedDatabase, now: () => number =
   // sequences well; protein k-mers (all six frames of the query) still find
   // relatives at 80-90% DNA identity, where shared DNA k-mers are mostly noise.
   const qs = sketch(query);
-  const qp = proteinKmers(sixFrames(query, db.code ?? 2));
+  // Translate the query once per genetic code the references use, and compare
+  // each reference against the translation made with its own code.
+  const codeOf = (i: number) => db.records[i].code ?? db.code ?? 2;
+  const queryProteins = new Map<number, Uint32Array>();
+  for (let i = 0; i < db.proteins.length; i++) {
+    const c = codeOf(i);
+    if (!queryProteins.has(c)) queryProteins.set(c, proteinKmers(sixFrames(query, c)));
+  }
   const byDna = db.sketches
     .map((s, i) => ({ i, score: containment(qs, s) }))
     .sort((a, b) => b.score - a.score)
-    .slice(0, SCREEN_DNA);
+    // Without a protein screen (ITS), let the DNA screen pass on as many candidates.
+    .slice(0, db.proteins.length ? SCREEN_DNA : SCREEN_DNA + SCREEN_PROTEIN);
   const byProtein = db.proteins
-    .map((p, i) => ({ i, score: p.length ? intersectSize(qp, p) / p.length : 0 }))
+    .map((p, i) => ({ i, score: p.length ? intersectSize(queryProteins.get(codeOf(i))!, p) / p.length : 0 }))
     .sort((a, b) => b.score - a.score)
     .slice(0, SCREEN_PROTEIN);
   const screenScore = new Map<number, number>();
@@ -235,7 +263,7 @@ export function identify(query: string, db: IndexedDatabase, now: () => number =
   timings.screen = now() - t;
   t = now();
 
-  const best = db.records[byDna[0].score >= byProtein[0].score ? byDna[0].i : byProtein[0].i];
+  const best = db.records[!byProtein.length || byDna[0].score >= byProtein[0].score ? byDna[0].i : byProtein[0].i];
   const { seq, reversed, region } = orient(query, best.seq);
   const target = region ? seq.slice(region.start, region.end) : seq;
 

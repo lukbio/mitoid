@@ -1,0 +1,117 @@
+{
+  "seed": 1,
+  "n": 200,
+  "subRate": 0.01,
+  "rows": [
+    {
+      "set": "COX1",
+      "group": "vertebrates",
+      "experiment": "present",
+      "n": 200,
+      "right": 197,
+      "vague": 3,
+      "sister": 0,
+      "wrong": 0,
+      "ms": 1154.758067
+    },
+    {
+      "set": "COX1",
+      "group": "vertebrates",
+      "experiment": "missing",
+      "n": 200,
+      "right": 139,
+      "vague": 13,
+      "sister": 34,
+      "wrong": 14,
+      "ms": 1155.044528
+    },
+    {
+      "set": "COX1",
+      "group": "invertebrates",
+      "experiment": "present",
+      "n": 200,
+      "right": 197,
+      "vague": 3,
+      "sister": 0,
+      "wrong": 0,
+      "ms": 936.3901974999998
+    },
+    {
+      "set": "COX1",
+      "group": "invertebrates",
+      "experiment": "missing",
+      "n": 200,
+      "right": 140,
+      "vague": 28,
+      "sister": 20,
+      "wrong": 12,
+      "ms": 924.4823525000003
+    },
+    {
+      "set": "matK",
+      "group": "plants",
+      "experiment": "present",
+      "n": 200,
+      "right": 193,
+      "vague": 7,
+      "sister": 0,
+      "wrong": 0,
+      "ms": 911.0067430000001
+    },
+    {
+      "set": "matK",
+      "group": "plants",
+      "experiment": "missing",
+      "n": 200,
+      "right": 157,
+      "vague": 1,
+      "sister": 24,
+      "wrong": 18,
+      "ms": 817.8616814999998
+    },
+    {
+      "set": "rbcL",
+      "group": "plants",
+      "experiment": "present",
+      "n": 200,
+      "right": 186,
+      "vague": 14,
+      "sister": 0,
+      "wrong": 0,
+      "ms": 773.185723
+    },
+    {
+      "set": "rbcL",
+      "group": "plants",
+      "experiment": "missing",
+      "n": 200,
+      "right": 166,
+      "vague": 2,
+      "sister": 4,
+      "wrong": 28,
+      "ms": 765.1495684999995
+    },
+    {
+      "set": "ITS",
+      "group": "fungi",
+      "experiment": "present",
+      "n": 200,
+      "right": 200,
+      "vague": 0,
+      "sister": 0,
+      "wrong": 0,
+      "ms": 209.67283000000054
+    },
+    {
+      "set": "ITS",
+      "group": "fungi",
+      "experiment": "missing",
+      "n": 200,
+      "right": 149,
+      "vague": 29,
+      "sister": 17,
+      "wrong": 5,
+      "ms": 212.81107950000091
+    }
+  ]
+}
