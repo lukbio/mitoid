@@ -2,7 +2,7 @@
 
 **Identify an animal, plant or fungus from a DNA sequence by its barcode genes, and see where it sits on a tree, entirely in the browser.**
 
-**Live:** https://yeezy1218.github.io/mitoid/
+**Live:** https://lukbio.github.io/mitoid/
 
 Three modes:
 
@@ -67,7 +67,7 @@ python scripts/build_fungi_db.py --email you@example.org
 - **Oyster mushroom ITS:** a 675 bp *Pleurotus ostreatus* ITS from GenBank (QB181443.1), not the RefSeq reference; 99.7% to *P. ostreatus*.
 - **English oak matK:** an 889 bp matK barcode region. Seven *Quercus* species match it equally, so MitoID reports *Quercus* sp.
 - **Thale cress chloroplast genome:** the full 154 kb *Arabidopsis thaliana* plastome (NC_000932.1). MitoID finds rbcL and matK inside it (matK on the reverse strand), and both identify *A. thaliana*.
-- **Gibbon mitogenome:** a 16.5 kb white-cheeked gibbon mitochondrial genome assembled from raw Illumina reads (SRA run SRR1425539) with my [mitogenome assembly pipeline](https://github.com/yeezy1218/mitogenome-pipeline). MitoID finds COX1 inside it and identifies *Nomascus leucogenys* at 99.9%.
+- **Gibbon mitogenome:** a 16.5 kb white-cheeked gibbon mitochondrial genome assembled from raw Illumina reads (SRA run SRR1425539) with my [mitogenome assembly pipeline](https://github.com/lukbio/mitogenome-pipeline). MitoID finds COX1 inside it and identifies *Nomascus leucogenys* at 99.9%.
 
 ## Development
 

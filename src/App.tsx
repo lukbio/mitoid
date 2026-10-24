@@ -22,8 +22,8 @@ const MODES: { mode: Mode; label: string; markers: string }[] = [
   { mode: "plants", label: "Plants (rbcL + matK)", markers: "rbcL and matK" },
   { mode: "fungi", label: "Fungi (ITS)", markers: "ITS" },
 ];
-const GITHUB = "https://github.com/yeezy1218/mitoid";
-const PIPELINE = "https://github.com/yeezy1218/mitogenome-pipeline";
+const GITHUB = "https://github.com/lukbio/mitoid";
+const PIPELINE = "https://github.com/lukbio/mitogenome-pipeline";
 
 function savedMode(): Mode {
   try {
